@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tylice - Sélection des Couleurs</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <h1>Tylice - Sélection des Couleurs</h1>
+    
+    <form method="POST" enctype="multipart/form-data">
+        <input type="file" name="image" required>
+        <button type="submit">Télécharger l'image</button>
+    </form>
+
+    <form method="POST">
+        <label for="num_selections">Nombre de couleurs:</label>
+        <select name="num_selections">
+            <option value="4" {% if num_selections == 4 %}selected{% endif %}>4 Couleurs</option>
+            <option value="6" {% if num_selections == 6 %}selected{% endif %}>6 Couleurs</option>
+        </select>
+        <button type="submit">Appliquer</button>
+    </form>
+
+    {% if image %}
+        <h2>Aperçu de l'image modifiée</h2>
+        <img src="data:image/png;base64,{{ img_base64 }}" alt="Image modifiée" width="350">
+        <h3>Couleurs sélectionnées:</h3>
+        <ul>
+            {% for color in selected_color_names %}
+                <li>{{ color }}</li>
+            {% endfor %}
+        </ul>
+
+        <a href="{{ url_for('download', file_name=file_name) }}" class="btn">Télécharger l'image</a>
+    {% endif %}
+</body>
+</html>
