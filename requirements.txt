@@ -2,3 +2,4 @@ Flask==2.3.2
 numpy==1.23.3
 scikit-learn==1.2.1
 Pillow==9.4.0
+python3-dev
