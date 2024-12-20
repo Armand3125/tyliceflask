@@ -1,11 +1,11 @@
-from flask import Flask, render_template, request, send_file
+import os
+from flask import Flask, request, jsonify
+from PIL import Image
 import numpy as np
 from sklearn.cluster import KMeans
-from PIL import Image
 import io
 import base64
 from datetime import datetime
-import os
 
 app = Flask(__name__)
 
@@ -21,82 +21,48 @@ pal = {
     "Bleu foncé": (4, 47, 86),
 }
 
-# Fonction pour convertir l'image en Base64
-def encode_image_base64(image):
-    with io.BytesIO() as buffer:
-        image.save(buffer, format="PNG")
-        return base64.b64encode(buffer.getvalue()).decode('utf-8')
-
-@app.route('/', methods=['GET', 'POST'])
+@app.route("/")
 def home():
-    selected_colors = []
-    selected_color_names = []
-    num_selections = 4
+    return "Hello, Flask on Heroku! Upload an image to get started."
 
-    if request.method == 'POST':
-        uploaded_file = request.files.get('image')
-        num_selections = int(request.form.get('num_selections', 4))
+@app.route("/process", methods=["POST"])
+def process_image():
+    try:
+        # Vérification du fichier envoyé
+        if "file" not in request.files:
+            return jsonify({"error": "No file provided"}), 400
 
-        if uploaded_file:
-            image = Image.open(uploaded_file).convert("RGB")
-            width, height = image.size
-            dim = 350
-            new_width = dim if width > height else int((dim / height) * width)
-            new_height = dim if height >= width else int((dim / width) * height)
-            resized_image = image.resize((new_width, new_height))
-            img_arr = np.array(resized_image)
+        file = request.files["file"]
+        image = Image.open(file).convert("RGB")
 
-            if img_arr.shape[-1] == 3:
-                pixels = img_arr.reshape(-1, 3)
-                kmeans = KMeans(n_clusters=num_selections, random_state=0).fit(pixels)
-                labels = kmeans.labels_
-                centers = kmeans.cluster_centers_
+        # Paramètres par défaut
+        num_selections = int(request.form.get("num_colors", 4))
+        image = image.resize((350, 350))  # Redimensionne pour le traitement
 
-                centers_rgb = np.array(centers, dtype=int)
-                pal_rgb = np.array(list(pal.values()), dtype=int)
-                distances = np.linalg.norm(centers_rgb[:, None] - pal_rgb[None, :], axis=2)
+        # KMeans pour la sélection des couleurs
+        img_arr = np.array(image)
+        pixels = img_arr.reshape(-1, 3)
+        kmeans = KMeans(n_clusters=num_selections, random_state=0).fit(pixels)
+        centers = np.array(kmeans.cluster_centers_, dtype=int)
 
-                ordered_colors_by_cluster = []
-                for i in range(num_selections):
-                    closest_colors_idx = distances[i].argsort()
-                    ordered_colors_by_cluster.append([list(pal.keys())[idx] for idx in closest_colors_idx])
+        # Conversion des couleurs
+        pal_rgb = np.array(list(pal.values()), dtype=int)
+        distances = np.linalg.norm(centers[:, None] - pal_rgb[None, :], axis=2)
 
-                cluster_counts = np.bincount(labels)
-                total_pixels = len(labels)
-                cluster_percentages = (cluster_counts / total_pixels) * 100
+        selected_colors = []
+        for i in range(num_selections):
+            closest_color_idx = distances[i].argmin()
+            selected_colors.append(list(pal.keys())[closest_color_idx])
 
-                sorted_indices = np.argsort(-cluster_percentages)
-                sorted_percentages = cluster_percentages[sorted_indices]
-                sorted_ordered_colors_by_cluster = [ordered_colors_by_cluster[i] for i in sorted_indices]
+        # Retourne les couleurs dominantes
+        return jsonify({
+            "colors": selected_colors
+        })
 
-                # Get selected colors
-                for i, cluster_index in enumerate(sorted_indices):
-                    color_name = request.form.get(f"color_select_{i}")
-                    selected_colors.append(pal.get(color_name))
-                    selected_color_names.append(color_name)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-                # Recréer l'image avec les nouvelles couleurs
-                new_img_arr = np.zeros_like(img_arr)
-                for i in range(img_arr.shape[0]):
-                    for j in range(img_arr.shape[1]):
-                        lbl = labels[i * img_arr.shape[1] + j]
-                        new_color_index = np.where(sorted_indices == lbl)[0][0]
-                        new_img_arr[i, j] = selected_colors[new_color_index]
-
-                new_image = Image.fromarray(new_img_arr.astype('uint8'))
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                file_name = f"{''.join(selected_color_names)}_{timestamp}.png"
-                img_base64 = encode_image_base64(new_image)
-                
-                return render_template('index.html', image=new_image, img_base64=img_base64, file_name=file_name, 
-                                       selected_color_names=selected_color_names, num_selections=num_selections)
-    
-    return render_template('index.html', selected_colors=selected_colors, num_selections=num_selections)
-
-@app.route('/download/<file_name>', methods=['GET'])
-def download(file_name):
-    file_path = os.path.join('static', 'images', file_name)
-    return send_file(file_path, as_attachment=True)
-
-if __name__ == '__main__':
-    app.run(debug=True)
+if __name__ == "__main__":
+    # Utilisation du port assigné par Heroku
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
