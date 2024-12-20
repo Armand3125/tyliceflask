@@ -24,8 +24,9 @@
     <img src="data:image/png;base64,{{ new_img_base64 }}" alt="Image modifiée" style="max-width: 100%; height: auto;">
     <h2>Couleurs sélectionnées :</h2>
     <div>
-        {% for color in selected_colors %}
-        <div class="color-box" style="background-color: rgb{{ pal[color] }};"></div>
+        {% for color_name in selected_colors %}
+        <div class="color-box" style="background-color: rgb{{ pal[color_name] }};"></div>
+        <p>{{ color_name }}</p>
         {% endfor %}
     </div>
     <a href="/">Retour</a>
