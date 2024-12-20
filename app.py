@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template, send_file
 from PIL import Image
 import numpy as np
 from sklearn.cluster import KMeans
@@ -23,7 +23,30 @@ pal = {
 
 @app.route("/")
 def home():
-    return "Hello, Flask on Heroku! Upload an image to get started."
+    # Charge une page HTML simple
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Image Color Extractor</title>
+    </head>
+    <body>
+        <h1>Image Color Extractor</h1>
+        <form action="/process" method="post" enctype="multipart/form-data">
+            <label for="file">Upload an image:</label>
+            <input type="file" name="file" id="file" required>
+            <br><br>
+            <label for="num_colors">Number of Colors:</label>
+            <select name="num_colors" id="num_colors">
+                <option value="4">4</option>
+                <option value="6">6</option>
+            </select>
+            <br><br>
+            <button type="submit">Submit</button>
+        </form>
+    </body>
+    </html>
+    """
 
 @app.route("/process", methods=["POST"])
 def process_image():
@@ -54,10 +77,24 @@ def process_image():
             closest_color_idx = distances[i].argmin()
             selected_colors.append(list(pal.keys())[closest_color_idx])
 
-        # Retourne les couleurs dominantes
-        return jsonify({
-            "colors": selected_colors
-        })
+        # Crée une réponse HTML avec les couleurs détectées
+        color_boxes = "".join(
+            f"<div style='width: 100px; height: 100px; display: inline-block; background-color: rgb{pal[color]}; margin: 10px;'></div>"
+            for color in selected_colors
+        )
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Extracted Colors</title>
+        </head>
+        <body>
+            <h1>Detected Colors</h1>
+            {color_boxes}
+            <a href="/">Back</a>
+        </body>
+        </html>
+        """
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
