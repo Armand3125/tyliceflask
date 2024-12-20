@@ -1,11 +1,10 @@
-import os
-from flask import Flask, request, render_template, jsonify, send_file
+from flask import Flask, render_template, request, redirect, url_for
 from PIL import Image
 import numpy as np
 from sklearn.cluster import KMeans
+import base64
 import io
 from datetime import datetime
-import base64
 
 app = Flask(__name__)
 
@@ -21,68 +20,70 @@ pal = {
     "BF": (4, 47, 86),
 }
 
-@app.route("/")
+@app.route('/')
 def home():
     return render_template("index.html")
 
-@app.route("/process", methods=["POST"])
-def process_image():
-    try:
-        # Récupérer l'image et les données depuis le formulaire
-        file = request.files.get("file")
-        num_selections = int(request.form.get("num_colors", 4))
-        if not file:
-            return jsonify({"error": "Aucune image n'a été envoyée"}), 400
+@app.route('/process', methods=["POST"])
+def process():
+    uploaded_file = request.files['image']
+    num_colors = int(request.form.get("num_colors", 4))
 
-        image = Image.open(file).convert("RGB")
-        width, height = image.size
-        dim = 350
-        new_width = dim if width > height else int((dim / height) * width)
-        new_height = dim if height >= width else int((dim / width) * height)
-
-        resized_image = image.resize((new_width, new_height))
-        img_arr = np.array(resized_image)
+    if uploaded_file:
+        image = Image.open(uploaded_file).convert("RGB")
+        img_arr = np.array(image)
         pixels = img_arr.reshape(-1, 3)
 
         # KMeans clustering
-        kmeans = KMeans(n_clusters=num_selections, random_state=0).fit(pixels)
+        kmeans = KMeans(n_clusters=num_colors, random_state=0).fit(pixels)
+        centers = kmeans.cluster_centers_
         labels = kmeans.labels_
-        centers = np.array(kmeans.cluster_centers_, dtype=int)
 
-        # Associer les couleurs aux noms
+        # Associer les couleurs aux clusters
+        centers_rgb = np.array(centers, dtype=int)
         pal_rgb = np.array(list(pal.values()), dtype=int)
-        distances = np.linalg.norm(centers[:, None] - pal_rgb[None, :], axis=2)
+        distances = np.linalg.norm(centers_rgb[:, None] - pal_rgb[None, :], axis=2)
+
+        ordered_colors_by_cluster = []
+        for i in range(num_colors):
+            closest_colors_idx = distances[i].argsort()
+            ordered_colors_by_cluster.append([list(pal.keys())[idx] for idx in closest_colors_idx])
+
+        # Calcul des proportions
+        cluster_counts = np.bincount(labels)
+        total_pixels = len(labels)
+        cluster_percentages = (cluster_counts / total_pixels) * 100
+        sorted_indices = np.argsort(-cluster_percentages)
 
         selected_colors = []
-        for i in range(num_selections):
-            closest_color_idx = distances[i].argmin()
-            selected_colors.append(list(pal.keys())[closest_color_idx])
+        for i, cluster_index in enumerate(sorted_indices):
+            selected_colors.append(ordered_colors_by_cluster[i][0])
 
-        # Recréer l'image avec les nouvelles couleurs
+        # Générer une nouvelle image
         new_img_arr = np.zeros_like(img_arr)
         for i in range(img_arr.shape[0]):
             for j in range(img_arr.shape[1]):
                 lbl = labels[i * img_arr.shape[1] + j]
-                new_img_arr[i, j] = centers[lbl]
+                new_color_index = np.where(sorted_indices == lbl)[0][0]
+                new_img_arr[i, j] = pal[selected_colors[new_color_index]]
 
         new_image = Image.fromarray(new_img_arr.astype('uint8'))
 
-        # Convertir l'image en base64 pour affichage
+        # Convertir en base64 pour affichage
         img_io = io.BytesIO()
         new_image.save(img_io, format="PNG")
         img_io.seek(0)
-        img_base64 = base64.b64encode(img_io.read()).decode()
+        img_base64 = base64.b64encode(img_io.getvalue()).decode('utf-8')
 
-        # Retourner les données
         return render_template(
             "results.html",
-            original_img=file.filename,
+            original_img=uploaded_file.filename,
             new_img_base64=img_base64,
             selected_colors=selected_colors,
+            pal=pal,
         )
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return redirect(url_for("home"))
+
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(debug=True)
