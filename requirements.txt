@@ -2,4 +2,5 @@ Flask==2.3.2
 numpy==1.23.3
 scikit-learn==1.2.1
 Pillow==9.4.0
-python3-dev
+setuptools>=40.8.0  # Ajoute setuptools pour résoudre le problème avec distutils
+gunicorn==20.1.0    # Serveur WSGI pour exécuter Flask sur Heroku
